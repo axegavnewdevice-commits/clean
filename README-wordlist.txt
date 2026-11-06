@@ -1,4 +1,4 @@
-words.bin    - Bloom-filter word list, 533,860 Arabic word forms (1.3 MB). Used by Challenge (server: wordlist.js, offline game: wordcheck.js).
+words.bin    - Bloom-filter word list, 533,860 Arabic word forms (1.3 MB). Used to refuse moves with unknown words (server: wordlist.js, local game: wordcheck.js).
 wordcheck.js - WordCheck.load(arrayBuffer).isValid('المدرسة')
 Accepts: listed words (base, plurals, feminine, dual, verb conjugations, tanween, nisba) AND ال + a listed word.
 Rejects: other prefixes (و ف ب ك ل س) and the dictionary's attached-pronoun groups (كتابهم، كتبته ...).

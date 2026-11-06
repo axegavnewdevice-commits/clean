@@ -32,8 +32,8 @@ export const generateCode = () => Array.from({ length: 6 }, () => CODE_ALPHABET[
 export const normalizeCode = (s) => String(s ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 
 const STATE_ERRORS = new Set([
-  'stale', 'not_your_turn', 'paused', 'game_over', 'game_not_over', 'nothing_to_challenge',
-  'own_move', 'no_timeout', 'not_expired', 'bag_too_small', 'waiting_for_opponent',
+  'stale', 'not_your_turn', 'paused', 'game_over', 'game_not_over',
+  'no_timeout', 'not_expired', 'bag_too_small', 'waiting_for_opponent',
 ]);
 
 export function cleanName(name, seat) {
@@ -150,7 +150,7 @@ export function createService(backend, { now = () => Date.now(), isValidWord = d
 
       if (out.error && !out.settled) {
         const status = STATE_ERRORS.has(out.error) ? 409 : 422;
-        throw new HttpError(status, out.error, { message: out.message, ...respond(loaded, G, seat) });
+        throw new HttpError(status, out.error, { message: out.message, words: out.words, ...respond(loaded, G, seat) });
       }
 
       const next = out.G;

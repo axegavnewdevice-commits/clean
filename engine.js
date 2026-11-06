@@ -2,7 +2,7 @@
  * Arabic Scrabble rules engine (server side, pure: no I/O).
  *
  * Everything here is a 1:1 port of the rules in index.html (tile table, board layout,
- * validatePlacement, scoreWord, submit/swap/pass/surrender/end-game logic), plus the server-side Challenge.
+ * validatePlacement, scoreWord, submit/swap/pass/surrender/end-game logic), plus the dictionary check on every move.
  * tests/parity.test.mjs runs the ORIGINAL functions from index.html side by side with this
  * file on thousands of random positions to prove the scoring and validation are identical.
  */
@@ -330,7 +330,7 @@ export function settle(G, now) {
 const err = (code) => ({ error: code });
 const isInt = (n, lo, hi) => Number.isInteger(n) && n >= lo && n <= hi;
 
-function actMove(G, seat, a, now) {
+function actMove(G, seat, a, now, isValidWord) {
   const list = a.placements;
   if (!Array.isArray(list) || list.length < 1 || list.length > RACK_SIZE) return err('bad_move');
   const rack = G.racks[seat];
@@ -358,8 +358,13 @@ function actMove(G, seat, a, now) {
   const validation = validatePlacement(work, placed);
   if (typeof validation === 'string') return { error: 'invalid_placement', message: validation };
 
-  const score = scoreMove(work, placed);
+  // Dictionary check: a move that forms a word (main or crossing) that is not in the word list is refused and nothing changes.
   const wordText = validation.words.map((w) => w.map(({ tile }) => tile.letter).join(''));
+  if (typeof isValidWord !== 'function') return err('wordlist_unavailable');
+  const unknown = wordText.filter((w) => !isValidWord(w));
+  if (unknown.length) return { error: 'invalid_word', words: unknown, message: `${unknown.length > 1 ? 'الكلمات غير موجودة' : 'الكلمة غير موجودة'} في قائمة الكلمات: ${unknown.join('، ')}` };
+
+  const score = scoreMove(work, placed);
   const wordCells = validation.words.map((w) => w.map(({ r, c }) => [r, c]));
 
   // --- from here the move is legal: mutate ---
@@ -372,7 +377,7 @@ function actMove(G, seat, a, now) {
   const summary = { type: 'move', seat, score, wordText, cells: wordCells, count: staged.length };
   const rackEmpty = rack.every((t) => !t);
   if (rackEmpty && G.bag.length === 0) {
-    G.lastMove = { seat, score, placements, drawn: [], turnNo: G.turnNo + 1, wordText };
+    G.lastMove = { seat, score, placements, drawn: [], turnNo: G.turnNo + 1 };
     G.scores[seat] += score;
     G.rackRev[seat] += 1;
     record(G, summary, now);
@@ -381,7 +386,7 @@ function actMove(G, seat, a, now) {
   }
 
   const drawn = G.bag.splice(0, staged.length);
-  G.lastMove = { seat, score, placements, drawn: drawn.map((t) => ({ ...t })), turnNo: G.turnNo + 1, wordText };
+  G.lastMove = { seat, score, placements, drawn: drawn.map((t) => ({ ...t })), turnNo: G.turnNo + 1 };
   G.scores[seat] += score;
   const refill = drawn.slice();
   rack.forEach((t, i) => { if (t === null && refill.length) rack[i] = refill.shift(); });
@@ -438,64 +443,6 @@ function actPass(G, seat, a, now) {
   return { G, rackChanged: [] };
 }
 
-/**
- * Takes the last move off the board (a successful challenge): its score is removed, its tiles go back to the
- * mover's rack, the tiles the mover drew go back to the front of the bag, and `nextSeat` gets the turn.
- */
-function removeLastMove(G, now, nextSeat) {
-  const { seat, score, placements, drawn } = G.lastMove;
-  const rack = G.racks[seat];
-  checkpoint(G, now);
-  G.scores[seat] = Math.max(0, G.scores[seat] - score);
-  placements.forEach(({ r, c, tile }) => {
-    if (G.board[r][c] && G.board[r][c].id === tile.id) G.board[r][c] = null;
-  });
-  // Take the freshly drawn tiles back out of the rack and return them to the front of the bag.
-  drawn.forEach((d) => {
-    const i = rack.findIndex((t) => t && t.id === d.id);
-    if (i !== -1) rack[i] = null;
-  });
-  G.bag.unshift(...drawn);
-  placements.forEach(({ tile }) => {
-    const restored = { ...tile };
-    if (restored.isBlank) restored.letter = ' '; // the player chooses the blank's letter again
-    const i = rack.findIndex((t) => t === null);
-    if (i !== -1) rack[i] = restored; else rack.push(restored);
-  });
-  G.rackRev[seat] += 1;
-  G.current = nextSeat;
-  G.lastMove = null;
-  G.scoreless = 0;
-  G.turnStartedAt = G.started && !G.paused && !G.ended ? now : null;
-}
-
-/**
- * CHALLENGE. The player whose turn it is disputes the opponent's last move. Every word that move formed
- * (the main word and all cross words) is checked with `isValidWord`.
- *   - some word is not valid  -> the move is removed (see removeLastMove); the challenger keeps the turn.
- *   - all words are valid     -> the challenger loses the turn: the mover plays again.
- * Either way the move can no longer be challenged. Moves are otherwise final (there is no undo).
- */
-function actChallenge(G, seat, a, now, isValidWord) {
-  const last = G.lastMove;
-  if (!last) return err('nothing_to_challenge');
-  if (last.seat === seat) return err('own_move');
-  const words = last.wordText;
-  if (!Array.isArray(words) || words.length === 0 || typeof isValidWord !== 'function') return err('nothing_to_challenge');
-  const invalid = words.filter((w) => !isValidWord(w));
-  const entry = { type: 'challenge', seat, moverSeat: last.seat, success: invalid.length > 0, score: last.score };
-  if (invalid.length) {
-    removeLastMove(G, now, seat);
-    record(G, { ...entry, invalid }, now);
-  } else {
-    checkpoint(G, now);
-    G.lastMove = null;
-    record(G, { ...entry, words }, now);
-    switchTurn(G, now);
-  }
-  return { G, rackChanged: invalid.length ? [last.seat] : [] };
-}
-
 function actPause(G, seat, a, now, pause) {
   if (G.paused === pause) return { G, rackChanged: [] };
   checkpoint(G, now);
@@ -540,12 +487,12 @@ function actNewGame(G, seat, a, now) {
   return { G: next, rackChanged: [1, 2] };
 }
 
-const NEEDS_TURNNO = new Set(['move', 'swap', 'pass', 'challenge']);
+const NEEDS_TURNNO = new Set(['move', 'swap', 'pass']);
 
 /**
  * Applies one action by `seat`. Returns { G, rackChanged } or { error, message? }.
  * `a.game` / `a.turnNo` guard against replayed or stale requests; `a.actionId` makes retries idempotent.
- * `opts.isValidWord(word) -> boolean` is the dictionary used by `challenge` (injected so this file stays pure).
+ * `opts.isValidWord(word) -> boolean` is the dictionary every `move` is checked against (injected so this file stays pure).
  * On `error`, G may only have been touched by the clock-expiry settle (see `settled`).
  */
 export function act(G, seat, a, now = Date.now(), opts = {}) {
@@ -568,16 +515,10 @@ export function act(G, seat, a, now = Date.now(), opts = {}) {
       if (G.ended) return err('game_over');
       if (G.paused) return err('paused');
       if (G.current !== seat) return err('not_your_turn');
-      out = a.type === 'move' ? actMove(G, seat, a, now) : a.type === 'swap' ? actSwap(G, seat, a, now) : actPass(G, seat, a, now);
+      out = a.type === 'move' ? actMove(G, seat, a, now, opts.isValidWord) : a.type === 'swap' ? actSwap(G, seat, a, now) : actPass(G, seat, a, now);
       break;
     }
-    case 'challenge': {
-      if (G.ended) return err('game_over');
-      if (G.paused) return err('paused');
-      if (G.current !== seat) return err('not_your_turn');
-      out = actChallenge(G, seat, a, now, opts.isValidWord);
-      break;
-    }
+
     case 'pause': case 'resume':
       if (G.ended) return err('game_over');
       out = actPause(G, seat, a, now, a.type === 'pause');

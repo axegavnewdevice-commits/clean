@@ -22,13 +22,13 @@
     oppRecon: 'الخصم غير متصل – بانتظار عودته', oppLong: 'الخصم غير متصل منذ فترة', reconnecting: 'جارٍ إعادة الاتصال…', offline: 'لا يوجد اتصال بالإنترنت',
     connecting: 'جارٍ الاتصال بالغرفة…', closed: 'تم إغلاق الغرفة', oppLeft: 'غادر الخصم الغرفة', joined: 'انضم الخصم – ابدؤوا اللعب!',
     paused: 'تم إيقاف اللعبة مؤقتاً', resumed: 'تم استئناف اللعبة', synced: 'تم تحديث اللعبة',
-    pass: 'مرّر', swap: 'بدّل', challengeWon: 'تحدّى بنجاح', challengeLost: 'تحدّى وفشل', ended: 'انتهت اللعبة', surrender: 'استسلم', timeout: 'انتهى الوقت',
+    pass: 'مرّر', swap: 'بدّل', ended: 'انتهت اللعبة', surrender: 'استسلم', timeout: 'انتهى الوقت',
   };
   const ERR = {
     room_not_found: 'رمز الغرفة غير صحيح', room_expired: 'انتهت صلاحية الغرفة', room_closed: 'تم إغلاق الغرفة', room_full: 'الغرفة ممتلئة (لاعبان فقط)',
     invalid_code: 'أدخل رمزاً من 6 خانات', network: 'تعذر الاتصال بالخادم، حاول مجدداً', unauthorized: 'تعذر تسجيل الدخول', server_not_configured: 'الخادم غير مُهيّأ بعد',
     not_your_turn: 'ليس دورك', stale: 'تغيّرت اللعبة، تم تحديثها', paused: 'اللعبة متوقفة مؤقتاً', game_over: 'انتهت اللعبة', game_not_over: 'لا يمكن بدء لعبة جديدة قبل نهاية الحالية',
-    bag_too_small: 'لا توجد قطع كافية في الكيس للتبديل', waiting_for_opponent: 'بانتظار انضمام الخصم', nothing_to_challenge: 'لا توجد حركة للخصم لتحدّيها', own_move: 'لا يمكنك تحدّي حركتك', wordlist_unavailable: 'تعذر تحميل قائمة الكلمات على الخادم', not_a_member: 'لا تملك مقعداً في هذه الغرفة',
+    bag_too_small: 'لا توجد قطع كافية في الكيس للتبديل', waiting_for_opponent: 'بانتظار انضمام الخصم', invalid_word: 'الكلمة غير موجودة في قائمة الكلمات', wordlist_unavailable: 'تعذر تحميل قائمة الكلمات على الخادم', not_a_member: 'لا تملك مقعداً في هذه الغرفة',
     api_missing: 'ملفات الخادم (مجلد api) غير منشورة أو غير مفعّلة على Vercel', server_error: 'حدث خطأ في الخادم',
     supabase_lib: 'تعذر تحميل مكتبة Supabase من الإنترنت', anonymous_disabled: 'فعّل Anonymous sign-ins في إعدادات Supabase (Authentication)',
     supabase_unreachable: 'تعذر الوصول إلى Supabase: تحقق من SUPABASE_URL وأن المشروع غير متوقف', auth_failed: 'رفض Supabase تسجيل الدخول: تحقق من SUPABASE_ANON_KEY',
@@ -237,7 +237,6 @@
       else if (ev.no > MP.lastEventNo) {
         MP.lastEventNo = ev.no;
         if (ev.type === 'move' && Array.isArray(ev.cells) && window.animateFormedWords) window.animateFormedWords(ev.cells.map((w) => w.map(([r, c]) => ({ r, c }))));
-        if (ev.type === 'challenge') challengeResult(ev);
         if (ev.type === 'pause' && ev.seat !== MP.seat) toast(T.paused);
         if (ev.type === 'resume' && ev.seat !== MP.seat) toast(T.resumed);
         if (ev.type === 'new_game') closeResult();
@@ -288,7 +287,7 @@
   }
 
   MP.canAct = canAct;
-  MP.toast = toast;   // also used by the local game to show the result of a Challenge
+  MP.toast = toast;   // also used by the local game to show why a word was refused
   MP.startClock = () => {};   // clocks tick from server timestamps (see clockTick)
   MP.submitMove = async () => {
     if (!canAct()) return;
@@ -306,16 +305,6 @@
     await send({ type: 'swap', tileIds });
   };
   MP.pass = async () => { if (canAct() && !placedTilesInTurn.length) await send({ type: 'pass' }); };
-  // Challenge: the player whose turn it is disputes the opponent's last move. The SERVER checks every word that move formed
-  // against the word list and decides (see engine.js): invalid word -> the move is removed; all valid -> the challenger loses the turn.
-  MP.challenge = async () => { if (canAct() && !placedTilesInTurn.length && MP.view.lastMove && MP.view.lastMove.seat !== MP.seat) await send({ type: 'challenge' }); };
-  function challengeResult(ev) {
-    const mine = ev.seat === MP.seat, words = (ev.invalid || []).join('، ');
-    const msg = ev.success
-      ? (mine ? `نجح تحدّيك: الكلمة غير صحيحة (${words}). أُلغيت حركة الخصم والدور لك.` : `تحدّاك الخصم: الكلمة غير صحيحة (${words}). أُلغيت حركتك.`)
-      : (mine ? 'فشل تحدّيك: كل الكلمات صحيحة. خسرت دورك.' : 'تحدّاك الخصم لكن كلماتك صحيحة. خسر دوره.');
-    toast(msg, 6000); if (typeof showStatus === 'function') showStatus(msg, mine ? !ev.success : ev.success);   // red when it went badly for me
-  }
   MP.togglePause = async () => { if (MP.active && MP.status === 'playing' && !gameEnded) await send({ type: gamePaused ? 'resume' : 'pause' }); };
   MP.surrender = async () => { if (MP.active && MP.status === 'playing' && !gameEnded) await send({ type: 'surrender' }); };
   MP.newGame = async () => {
@@ -330,8 +319,6 @@
     const live = MP.status === 'playing' && !!MP.view;
     if (!canAct()) ['submit-move', 'reset-move', 'swap-tiles', 'pass-turn'].forEach((id) => dis(id, true));
     if (!gameEnded && !(isSwappingMode && canAct())) { /* original rules already enabled/disabled the rest for a live turn */ }
-    // Challenge button: only on my turn, right after the opponent moved
-    dis('undo-last-move', !(live && lastMoveData && lastMoveData.playerId !== MP.seat && currentPlayer === MP.seat && !placedTilesInTurn.length && !gameEnded && !gamePaused && !MP.busy));
     dis('pause-game', !live || gameEnded || MP.busy);
     dis('surrender-game', !live || gameEnded || MP.busy);
     dis('new-game', !gameEnded || MP.busy);
@@ -613,7 +600,7 @@
     ((MP.view && MP.view.history) || []).slice(-25).reverse().forEach((h) => {
       const li = document.createElement('li');
       const who = MP.names[h.seat] || '';
-      li.textContent = h.type === 'move' ? `${who}: ${(h.words || []).join('، ')} (+${h.score})` : h.type === 'pass' ? `${who}: ${T.pass}` : h.type === 'swap' ? `${who}: ${T.swap} ${h.count}` : h.type === 'challenge' ? `${who}: ${h.success ? T.challengeWon + ' (' + (h.invalid || []).join('، ') + ')' : T.challengeLost}` : T.ended;
+      li.textContent = h.type === 'move' ? `${who}: ${(h.words || []).join('، ')} (+${h.score})` : h.type === 'pass' ? `${who}: ${T.pass}` : h.type === 'swap' ? `${who}: ${T.swap} ${h.count}` : T.ended;
       hist.appendChild(li);
     });
   }

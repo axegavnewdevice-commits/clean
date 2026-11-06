@@ -1,6 +1,6 @@
 /**
- * Server-side dictionary for Challenge. Loads wordcheck.js + words.bin (a Bloom-filter word list built from AyaSpell,
- * see README-wordlist.txt) the first time a challenge is made, so cold starts of every other route are unaffected.
+ * Server-side dictionary: every move is checked against it. Loads wordcheck.js + words.bin (a Bloom-filter word list built from AyaSpell,
+ * see README-wordlist.txt) the first time a move is made, so cold starts of every other route are unaffected.
  * wordcheck.js is a classic-script/UMD file (the browser loads the same file), so it is evaluated here as a CommonJS module.
  */
 import { readFileSync } from 'node:fs';
