@@ -3313,10 +3313,7 @@ let consecutiveScorelessTurns = 0;   // passes and swaps in a row; six in a row 
             catch (e) { notify('تعذر تحميل قائمة الكلمات. تحقق من الاتصال ثم حاول مجدداً.', true); return false; }
             const texts = words.map(w => w.map(x => x.tile.letter).join(''));
             const unknown = wl.invalidWords(texts);
-            if (unknown.length) {
-                notify(`${unknown.length > 1 ? 'الكلمات غير موجودة' : 'الكلمة غير موجودة'} في قائمة الكلمات: ${unknown.join('، ')}`, true);
-                return false;
-            }
+            if (unknown.length) return false;   // refused silently: no pop-up, the tiles just stay on the board
             return true;
         };
         /** Allows the current player to pass their turn without playing tiles. */

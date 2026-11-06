@@ -281,7 +281,8 @@
     } catch (e) {
       if (e.data && e.data.view) apply(e.data);                    // the server sends its current state with each refusal
       if (e.status === 410) { sessionLost(e); return false; }
-      if (!silent) toast(errText(e));
+      // a refused word / illegal placement is silent (the tiles just stay on the board); real problems still show a message
+      if (!silent && !(e.data && (e.data.error === 'invalid_word' || e.data.error === 'invalid_placement'))) toast(errText(e));
       return false;
     } finally { MP.busy = false; updateUI(false); }
   }
@@ -292,7 +293,7 @@
   MP.submitMove = async () => {
     if (!canAct()) return;
     const check = validatePlacement();                              // instant local feedback; the server re-validates everything
-    if (typeof check === 'string') { showStatus(check, true); toast(check); return; }
+    if (typeof check === 'string') { showStatus(check, true); return; }   // refused silently (no pop-up), same as the local game
     if (placedTilesInTurn.some((p) => p.originalTile.isBlank && p.originalTile.letter === ' ')) return;
     await send({ type: 'move', placements: placedTilesInTurn.map((p) => ({ r: p.r, c: p.c, id: p.tileId, letter: p.originalTile.letter })) });
   };
